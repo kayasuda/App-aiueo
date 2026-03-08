@@ -16,7 +16,9 @@ private struct QuizSession: View {
     @EnvironmentObject private var store: ProgressStore
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: QuizViewModel
+    @StateObject private var concentrationMonitor = ConcentrationMonitorService()
     @State private var savedResult = false
+    @State private var showingAdvice = false
     let onRetry: () -> Void
 
     init(mode: QuizMode, onRetry: @escaping () -> Void) {
@@ -163,6 +165,13 @@ private struct QuizSession: View {
                 }
             }
         }
+        .overlay {
+            if showingAdvice, let advice = concentrationMonitor.lastAdvice {
+                ConcentrationAdviceView(message: advice) {
+                    showingAdvice = false
+                }
+            }
+        }
         .navigationTitle(viewModel.isCompleted ? "" : "クイズ")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(viewModel.isCompleted)
@@ -176,9 +185,19 @@ private struct QuizSession: View {
             if let q = viewModel.currentQuestion, q.mode == .audioToKana {
                 KanaSpeaker.shared.speak(q.kanaPrompt, times: 3)
             }
+            startConcentrationMonitorIfNeeded()
+        }
+        .onDisappear {
+            concentrationMonitor.stopMonitoring()
+        }
+        .onChange(of: concentrationMonitor.lastAdvice) {
+            if concentrationMonitor.lastAdvice != nil {
+                showingAdvice = true
+            }
         }
         .onChange(of: viewModel.isCompleted) {
             guard viewModel.isCompleted, !savedResult else { return }
+            concentrationMonitor.stopMonitoring()
             let result = QuizSessionResult(
                 id: UUID(),
                 startedAt: viewModel.startedAt,
@@ -190,6 +209,12 @@ private struct QuizSession: View {
             store.saveSession(result)
             savedResult = true
         }
+    }
+
+    private func startConcentrationMonitorIfNeeded() {
+        guard store.settings.concentrationMonitorEnabled,
+              !store.settings.anthropicAPIKey.isEmpty else { return }
+        concentrationMonitor.startMonitoring(apiKey: store.settings.anthropicAPIKey)
     }
 
     private func colorFor(choice: String, question: QuizQuestion) -> Color {
