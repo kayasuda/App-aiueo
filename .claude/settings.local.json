@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xcrun simctl terminate E418070F-FA48-4AC3-943F-BCD45A6D8046 jp.co.yahoo.jkazuhiro0911.AiueoLearning)",
+      "Bash(xcrun simctl launch E418070F-FA48-4AC3-943F-BCD45A6D8046 jp.co.yahoo.jkazuhiro0911.AiueoLearning)",
+      "Bash(xcodebuild -project /Users/kazuhiro/Desktop/swift-app-aiueo/AiueoLearning/AiueoLearning.xcodeproj -scheme AiueoLearning -destination 'id=E418070F-FA48-4AC3-943F-BCD45A6D8046' -configuration Debug build)",
+      "Bash(xcrun simctl install E418070F-FA48-4AC3-943F-BCD45A6D8046 \"/Users/kazuhiro/Library/Developer/Xcode/DerivedData/AiueoLearning-aekyxekvzmoedrahsfkocmpyzzjk/Build/Products/Debug-iphonesimulator/AiueoLearning.app\")",
+      "Bash(# シミュレータのミュート状態を確認 defaults read com.apple.iphonesimulator)"
+    ]
+  }
+}
