@@ -7,6 +7,15 @@ struct QuizQuestion {
     let mode: QuizMode
 }
 
+/// 1問ごとの回答ログ
+struct AnswerLog {
+    let questionIndex: Int
+    let kana: String
+    let isCorrect: Bool
+    let responseTime: TimeInterval  // 問題表示から回答までの秒数
+    let answeredAt: Date
+}
+
 @MainActor
 final class QuizViewModel: ObservableObject {
     @Published private(set) var questions: [QuizQuestion] = []
@@ -16,14 +25,20 @@ final class QuizViewModel: ObservableObject {
     @Published var selectedChoice: String?
     @Published var isCurrentAnswerCorrect: Bool?
 
+    /// 回答ログ（集中度判定に使用）
+    @Published private(set) var answerLogs: [AnswerLog] = []
+
     let questionCount: Int
     let mode: QuizMode
     let startedAt: Date
+    /// 現在の問題が表示された時刻
+    private var questionShownAt: Date
 
     init(questionCount: Int = 5, mode: QuizMode) {
         self.questionCount = questionCount
         self.mode = mode
         self.startedAt = Date()
+        self.questionShownAt = Date()
         self.questions = Self.generateQuestions(count: questionCount, mode: mode)
     }
 
@@ -44,6 +59,16 @@ final class QuizViewModel: ObservableObject {
         if correct {
             correctCount += 1
         }
+
+        let now = Date()
+        let log = AnswerLog(
+            questionIndex: currentIndex,
+            kana: current.correctKana,
+            isCorrect: correct,
+            responseTime: now.timeIntervalSince(questionShownAt),
+            answeredAt: now
+        )
+        answerLogs.append(log)
     }
 
     func advance() {
@@ -55,6 +80,7 @@ final class QuizViewModel: ObservableObject {
             isCompleted = true
         } else {
             currentIndex += 1
+            questionShownAt = Date()
         }
     }
 

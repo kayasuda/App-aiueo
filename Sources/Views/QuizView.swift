@@ -190,6 +190,12 @@ private struct QuizSession: View {
         .onDisappear {
             concentrationMonitor.stopMonitoring()
         }
+        .onChange(of: concentrationMonitor.needsCheck) {
+            guard concentrationMonitor.needsCheck else { return }
+            Task {
+                await concentrationMonitor.checkNow(viewModel: viewModel)
+            }
+        }
         .onChange(of: concentrationMonitor.lastAdvice) {
             if concentrationMonitor.lastAdvice != nil {
                 showingAdvice = true

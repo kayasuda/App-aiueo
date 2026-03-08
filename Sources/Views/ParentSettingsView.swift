@@ -92,7 +92,7 @@ struct ParentSettingsView: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 14)
 
-                        Text("クイズ中にカメラで30秒ごとに集中度をチェックし、声かけします。Anthropic の API キーが必要です。")
+                        Text("クイズ中に30秒ごとに回答状況（正答率・回答速度・進捗）をAIが分析し、やさしく声かけします。Anthropic の API キーが必要です。")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 16)
