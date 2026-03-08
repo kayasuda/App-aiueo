@@ -20,7 +20,7 @@ final class QuizViewModel: ObservableObject {
     let mode: QuizMode
     let startedAt: Date
 
-    init(questionCount: Int = 10, mode: QuizMode) {
+    init(questionCount: Int = 5, mode: QuizMode) {
         self.questionCount = questionCount
         self.mode = mode
         self.startedAt = Date()
