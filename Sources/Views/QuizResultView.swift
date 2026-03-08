@@ -10,6 +10,7 @@ struct QuizResultView: View {
     @State private var appeared = false
     @State private var hanamaruScale: CGFloat = 0.3
     @State private var hanamaruRotation: Double = -30
+    @State private var showYouTubeReward = false
 
     private var starCount: Int {
         let ratio = Double(correctCount) / Double(max(questionCount, 1))
@@ -123,6 +124,47 @@ struct QuizResultView: View {
 
                 Spacer()
 
+                // ご褒美YouTubeボタン（全問正解のみ）
+                if isPerfect {
+                    Button {
+                        showYouTubeReward = true
+                    } label: {
+                        HStack(spacing: 14) {
+                            Text("🎬")
+                                .font(.system(size: 36))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("ごほうび どうが！")
+                                    .font(.system(size: 28, weight: .heavy, design: .rounded))
+                                    .foregroundStyle(.white)
+                                Text("5ふんかん みられるよ")
+                                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                                    .foregroundStyle(.white.opacity(0.8))
+                            }
+                            Spacer()
+                            Image(systemName: "play.circle.fill")
+                                .font(.system(size: 36))
+                                .foregroundStyle(.white)
+                        }
+                        .padding(.horizontal, 24)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 100)
+                        .background(
+                            LinearGradient(
+                                colors: [Color(red: 1.0, green: 0.2, blue: 0.2), Color(red: 0.9, green: 0.1, blue: 0.4)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 28))
+                        .shadow(color: Color(red: 1.0, green: 0.2, blue: 0.2).opacity(0.45), radius: 16, x: 0, y: 8)
+                    }
+                    .accessibilityLabel("ご褒美のYouTube動画を5分間見る")
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 8)
+                    .opacity(appeared ? 1 : 0)
+                    .offset(y: appeared ? 0 : 40)
+                }
+
                 // 大きなボタン2つ
                 VStack(spacing: 14) {
                     // もういちど（メインアクション）
@@ -177,6 +219,9 @@ struct QuizResultView: View {
                 appeared = true
             }
         }
+        .fullScreenCover(isPresented: $showYouTubeReward) {
+            YouTubeRewardView(onFinished: { showYouTubeReward = false })
+        }
     }
 }
 
@@ -219,8 +264,8 @@ private struct HanamaruView: View {
 
 #Preview {
     QuizResultView(
-        correctCount: 10,
-        questionCount: 10,
+        correctCount: 5,
+        questionCount: 5,
         weakKana: [],
         onRetry: {},
         onHome: {}
