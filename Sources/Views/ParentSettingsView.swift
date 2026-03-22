@@ -57,6 +57,49 @@ struct ParentSettingsView: View {
                     .padding(.vertical, 14)
                 }
 
+                SettingsCard(title: "👀 しゅうちゅうど みまもり") {
+                    VStack(spacing: 0) {
+                        SettingsToggleRow(
+                            label: "みまもり ON/OFF",
+                            icon: "eye.fill",
+                            tint: Color(red: 0.9, green: 0.45, blue: 0.2),
+                            isOn: Binding(
+                                get: { store.settings.concentrationMonitorEnabled },
+                                set: { newValue in store.updateSettings { $0.concentrationMonitorEnabled = newValue } }
+                            )
+                        )
+                        Divider().padding(.leading, 56)
+                        HStack(spacing: 14) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color(red: 0.9, green: 0.45, blue: 0.2).opacity(0.12))
+                                    .frame(width: 36, height: 36)
+                                Image(systemName: "key.fill")
+                                    .foregroundStyle(Color(red: 0.9, green: 0.45, blue: 0.2))
+                                    .font(.system(size: 15, weight: .semibold))
+                            }
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("API キー")
+                                    .font(.body.bold())
+                                SecureField("sk-ant-...", text: Binding(
+                                    get: { store.settings.anthropicAPIKey },
+                                    set: { newValue in store.updateSettings { $0.anthropicAPIKey = newValue } }
+                                ))
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 14, design: .monospaced))
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+
+                        Text("クイズ中に30秒ごとに回答状況（正答率・回答速度・進捗）をAIが分析し、やさしく声かけします。Anthropic の API キーが必要です。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 12)
+                    }
+                }
+
                 SettingsCard(title: "💎 こうにゅうじょうたい") {
                     HStack(spacing: 14) {
                         ZStack {
