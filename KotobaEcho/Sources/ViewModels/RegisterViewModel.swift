@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 
-/// 「とうろく」モードの制御。子の声を録音し、保護者が意味を付けて辞書に保存する。
+/// 「とうろく」モードの制御。子の声を録音し、波形（埋め込み）と意味を辞書に保存する。
 @MainActor
 final class RegisterViewModel: ObservableObject {
 
@@ -18,10 +18,10 @@ final class RegisterViewModel: ObservableObject {
     @Published private(set) var roughTranscript: String = ""
 
     private var audioFileName: String?
+    private var embedding: [Float]?
 
     private let store: PhraseStore
     private let recorder: AudioRecorder
-    private let recognizer = SpeechRecognizer()
 
     init(store: PhraseStore) {
         self.store = store
@@ -34,11 +34,7 @@ final class RegisterViewModel: ObservableObject {
     }
 
     func toggleRecording() async {
-        if isRecording {
-            await finishRecording()
-        } else {
-            await beginRecording()
-        }
+        if isRecording { await finishRecording() } else { await beginRecording() }
     }
 
     private func beginRecording() async {
@@ -46,10 +42,11 @@ final class RegisterViewModel: ObservableObject {
             phase = .error("マイクの利用が許可されていません。")
             return
         }
-        _ = await recognizer.requestAuthorization()
+        _ = await OnDeviceSpeechRecognizer.requestAuthorization()
         do {
             audioFileName = try recorder.startRecording()
             roughTranscript = ""
+            embedding = nil
             phase = .recording
         } catch {
             phase = .error("録音を開始できませんでした: \(error.localizedDescription)")
@@ -65,13 +62,16 @@ final class RegisterViewModel: ObservableObject {
             return
         }
         let url = store.recordingsDirectory.appendingPathComponent(fileName)
-        // ラフな読みは任意（取得できなくても登録は可能）
-        roughTranscript = (try? await recognizer.transcribe(fileURL: url)) ?? ""
+
+        // 波形を認識し、聞こえ方テキストと音響埋め込みを取得（失敗しても登録は可能）
+        if let recognition = try? await makeRecognizer().recognize(fileURL: url) {
+            roughTranscript = recognition.bestText
+            embedding = recognition.embedding
+        }
         phase = .ready
     }
 
     func playback() {
-        // 確認用に「聞こえ方」ではなく入力中の意味を読み上げる（発音見本）
         let text = meaning.trimmingCharacters(in: .whitespacesAndNewlines)
         if !text.isEmpty { EchoSpeaker.shared.speak(text) }
     }
@@ -80,11 +80,20 @@ final class RegisterViewModel: ObservableObject {
         guard let fileName = audioFileName, canSave else { return }
         store.addPhrase(meaning: meaning,
                         audioFileName: fileName,
-                        roughTranscript: roughTranscript)
-        // 次の登録へ
+                        roughTranscript: roughTranscript,
+                        embedding: embedding)
         meaning = ""
         roughTranscript = ""
         audioFileName = nil
+        embedding = nil
         phase = .idle
+    }
+
+    private func makeRecognizer() -> AudioRecognizing {
+        let config = store.config
+        if config.cloudEnabled && !config.speechBaseURL.trimmingCharacters(in: .whitespaces).isEmpty {
+            return CloudSpeechRecognizer(baseURL: config.speechBaseURL, apiKey: store.speechAPIKey)
+        }
+        return OnDeviceSpeechRecognizer()
     }
 }

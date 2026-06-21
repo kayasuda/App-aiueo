@@ -1,7 +1,8 @@
 import Foundation
 import SwiftUI
 
-/// 「きく」モードの制御。録音 → ラフな読み → 文脈推論 → 復唱、までを束ねる。
+/// 「きく」モードの制御。
+/// 録音 → 波形を音声モデルで認識 → その子の登録サンプルと波形照合 → Claudeで文脈推論 → 復唱。
 @MainActor
 final class ListenViewModel: ObservableObject {
 
@@ -15,13 +16,14 @@ final class ListenViewModel: ObservableObject {
 
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var candidate: MatchCandidate?
-    /// 最後に録音したファイル名（訂正学習で再利用）
-    @Published private(set) var lastAudioFileName: String?
-    @Published private(set) var lastRoughTranscript: String = ""
 
     private let store: PhraseStore
     private let recorder: AudioRecorder
-    private let recognizer = SpeechRecognizer()
+
+    // 訂正学習で再利用するため、最後の発話の情報を保持
+    private var lastAudioFileName: String?
+    private var lastEmbedding: [Float]?
+    private var lastRoughText: String = ""
 
     init(store: PhraseStore) {
         self.store = store
@@ -30,14 +32,8 @@ final class ListenViewModel: ObservableObject {
 
     var isRecording: Bool { phase == .recording }
 
-    // MARK: - 録音トグル
-
     func toggleRecording() async {
-        if isRecording {
-            await finishRecording()
-        } else {
-            await beginRecording()
-        }
+        if isRecording { await finishRecording() } else { await beginRecording() }
     }
 
     private func beginRecording() async {
@@ -45,10 +41,9 @@ final class ListenViewModel: ObservableObject {
             phase = .error("マイクの利用が許可されていません。")
             return
         }
-        guard await recognizer.requestAuthorization() else {
-            phase = .error("音声認識の利用が許可されていません。")
-            return
-        }
+        // 端末内認識のフォールバックに備えて許可を取得
+        _ = await OnDeviceSpeechRecognizer.requestAuthorization()
+
         candidate = nil
         do {
             lastAudioFileName = try recorder.startRecording()
@@ -69,12 +64,21 @@ final class ListenViewModel: ObservableObject {
         let url = store.recordingsDirectory.appendingPathComponent(fileName)
 
         do {
-            let rough = try await recognizer.transcribe(fileURL: url)
-            lastRoughTranscript = rough
+            // 1. 波形を認識（クラウド音声モデル or 端末内）
+            let recognition = try await makeRecognizer().recognize(fileURL: url)
+            lastEmbedding = recognition.embedding
+            lastRoughText = recognition.bestText
 
-            let interpreter = makeInterpreter()
-            let result = try await interpreter.interpret(
-                roughTranscript: rough,
+            // 2. その子の登録サンプルと波形照合
+            let acousticMatches = AcousticMatcher.rank(
+                query: recognition.embedding ?? [],
+                phrases: store.phrases
+            )
+
+            // 3. 文脈推論で確定
+            let result = try await makeInterpreter().interpret(
+                transcriptCandidates: recognition.candidates,
+                acousticMatches: acousticMatches,
                 knownPhrases: store.phrases,
                 recentTurns: store.recentTurns,
                 childName: store.config.childName
@@ -83,11 +87,8 @@ final class ListenViewModel: ObservableObject {
             candidate = result
             phase = .result
 
-            // 確定テキストを文脈に追加し、正しい発音で復唱
             store.appendTurn(speaker: .child, text: result.intendedText)
-            if let id = result.matchedPhraseId {
-                store.markMatched(id)
-            }
+            if let id = result.matchedPhraseId { store.markMatched(id) }
             EchoSpeaker.shared.speak(result.intendedText)
 
         } catch {
@@ -95,14 +96,11 @@ final class ListenViewModel: ObservableObject {
         }
     }
 
-    /// もう一度復唱。
     func repeatEcho() {
-        if let text = candidate?.intendedText {
-            EchoSpeaker.shared.speak(text)
-        }
+        if let text = candidate?.intendedText { EchoSpeaker.shared.speak(text) }
     }
 
-    /// 保護者が訂正：正しい意味を辞書に学習させ、復唱し直す。
+    /// 保護者が訂正：今の発話（波形・埋め込み）を正しい意味に紐づけて学習させる。
     func correct(to meaning: String) {
         guard let fileName = lastAudioFileName else { return }
         let trimmed = meaning.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -110,7 +108,8 @@ final class ListenViewModel: ObservableObject {
 
         store.addPhrase(meaning: trimmed,
                         audioFileName: fileName,
-                        roughTranscript: lastRoughTranscript)
+                        roughTranscript: lastRoughText,
+                        embedding: lastEmbedding)
         store.appendTurn(speaker: .parent, text: "（訂正）\(trimmed)")
 
         candidate = MatchCandidate(intendedText: trimmed,
@@ -126,12 +125,19 @@ final class ListenViewModel: ObservableObject {
         candidate = nil
     }
 
-    // MARK: - 推論器の選択
+    // MARK: - 推論器・認識器の選択
+
+    private func makeRecognizer() -> AudioRecognizing {
+        let config = store.config
+        if config.cloudEnabled && !config.speechBaseURL.trimmingCharacters(in: .whitespaces).isEmpty {
+            return CloudSpeechRecognizer(baseURL: config.speechBaseURL, apiKey: store.speechAPIKey)
+        }
+        return OnDeviceSpeechRecognizer()
+    }
 
     private func makeInterpreter() -> ClaudeInterpreting {
         let config = store.config
         let key = store.apiKey
-        // クラウド同意あり、かつキーまたはプロキシURLが使える場合のみクラウド
         let usingProxy = config.apiBaseURL != "https://api.anthropic.com"
         if config.cloudEnabled && (!key.isEmpty || usingProxy) {
             return ClaudeInterpreter(apiKey: key, baseURL: config.apiBaseURL, model: config.model)

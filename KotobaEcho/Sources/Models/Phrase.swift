@@ -5,8 +5,11 @@ struct PhraseRecording: Identifiable, Codable, Hashable {
     var id: UUID = UUID()
     /// 端末内に保存した音声ファイル名（PhraseStore が管理するディレクトリ内）
     var audioFileName: String
-    /// 音声認識で得た「ラフな読み」（不正確な音のテキスト化）
+    /// 音声認識で得た「ラフな読み」（不正確な音のテキスト化）。補助的なヒント。
     var roughTranscript: String
+    /// 波形から得た音響埋め込み（声紋的な特徴ベクトル）。
+    /// その子の発話どうしを直接照合するための主信号。取得できない場合は nil。
+    var audioEmbedding: [Float]?
     var createdAt: Date = Date()
 }
 

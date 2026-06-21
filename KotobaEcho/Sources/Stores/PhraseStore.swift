@@ -17,6 +17,7 @@ final class PhraseStore: ObservableObject {
     private let phrasesURL: URL
     private let configKey = "kotobaecho.config.v1"
     private let apiKeyKeychainKey = "anthropic.api.key"
+    private let speechKeyKeychainKey = "speech.api.key"
     private let maxTurns = 40
 
     init() {
@@ -38,16 +39,25 @@ final class PhraseStore: ObservableObject {
 
     // MARK: - APIキー
 
+    /// Claude（文脈推論）用のキー
     var apiKey: String {
         get { KeychainStore.get(apiKeyKeychainKey) ?? "" }
         set { KeychainStore.set(newValue, for: apiKeyKeychainKey) }
     }
 
+    /// クラウド音声モデル用のキー
+    var speechAPIKey: String {
+        get { KeychainStore.get(speechKeyKeychainKey) ?? "" }
+        set { KeychainStore.set(newValue, for: speechKeyKeychainKey) }
+    }
+
     // MARK: - フレーズ辞書
 
     /// 新しいフレーズ（意味＋音声サンプル1件）を登録。
-    func addPhrase(meaning: String, audioFileName: String, roughTranscript: String) {
-        let recording = PhraseRecording(audioFileName: audioFileName, roughTranscript: roughTranscript)
+    func addPhrase(meaning: String, audioFileName: String, roughTranscript: String, embedding: [Float]?) {
+        let recording = PhraseRecording(audioFileName: audioFileName,
+                                        roughTranscript: roughTranscript,
+                                        audioEmbedding: embedding)
         let trimmed = meaning.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if let index = phrases.firstIndex(where: { $0.meaning == trimmed }) {
@@ -62,10 +72,12 @@ final class PhraseStore: ObservableObject {
     }
 
     /// 既存フレーズに音声サンプルを追加（訂正学習）。
-    func addRecording(to phraseId: UUID, audioFileName: String, roughTranscript: String) {
+    func addRecording(to phraseId: UUID, audioFileName: String, roughTranscript: String, embedding: [Float]?) {
         guard let index = phrases.firstIndex(where: { $0.id == phraseId }) else { return }
         phrases[index].recordings.append(
-            PhraseRecording(audioFileName: audioFileName, roughTranscript: roughTranscript)
+            PhraseRecording(audioFileName: audioFileName,
+                            roughTranscript: roughTranscript,
+                            audioEmbedding: embedding)
         )
         phrases[index].updatedAt = Date()
         savePhrases()

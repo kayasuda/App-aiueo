@@ -1,15 +1,12 @@
 import Foundation
 import Speech
 
-/// 録音済みファイルから「ラフな読み」を取り出す。
+/// 端末内の音声認識（SFSpeechRecognizer）。波形を端末外へ出さないフォールバック。
 ///
-/// 構音障害の発話を正確に書き起こすのは難しいため、ここで得られるのは
-/// あくまで不正確な音のテキスト化（= 親が文脈推論する前の「聞こえた音」に相当）。
-/// その不正確さを ClaudeInterpreter が文脈で補正する。
-///
-/// プライバシー配慮として、可能な端末では `requiresOnDeviceRecognition` を有効にし、
-/// 音声をクラウド音声認識へ送らない。
-final class SpeechRecognizer {
+/// 構音障害の発話は汎用認識器では正確に書き起こせないため、得られる候補は
+/// あくまで弱いヒント。音響埋め込みは取得できない（embedding は nil）。
+/// 高精度を求める場合は CloudSpeechRecognizer（波形を音声モデルへ送信）を使う。
+final class OnDeviceSpeechRecognizer: AudioRecognizing {
 
     enum RecognizerError: LocalizedError {
         case notAuthorized
@@ -31,8 +28,7 @@ final class SpeechRecognizer {
         self.recognizer = SFSpeechRecognizer(locale: locale)
     }
 
-    /// 音声認識の利用許可をリクエスト。
-    func requestAuthorization() async -> Bool {
+    static func requestAuthorization() async -> Bool {
         await withCheckedContinuation { continuation in
             SFSpeechRecognizer.requestAuthorization { status in
                 continuation.resume(returning: status == .authorized)
@@ -40,8 +36,7 @@ final class SpeechRecognizer {
         }
     }
 
-    /// ファイルを認識して「ラフな読み」を返す。
-    func transcribe(fileURL: URL) async throws -> String {
+    func recognize(fileURL: URL) async throws -> AudioRecognition {
         guard SFSpeechRecognizer.authorizationStatus() == .authorized else {
             throw RecognizerError.notAuthorized
         }
@@ -55,8 +50,7 @@ final class SpeechRecognizer {
             request.requiresOnDeviceRecognition = true
         }
 
-        return try await withCheckedThrowingContinuation { continuation in
-            // 多重 resume を防ぐためのガード
+        let text: String = try await withCheckedThrowingContinuation { continuation in
             var hasResumed = false
             recognizer.recognitionTask(with: request) { result, error in
                 if let error {
@@ -64,16 +58,21 @@ final class SpeechRecognizer {
                     return
                 }
                 guard let result, result.isFinal else { return }
-                let text = result.bestTranscription.formattedString
+                let best = result.bestTranscription.formattedString
                 if !hasResumed {
                     hasResumed = true
-                    if text.isEmpty {
+                    if best.isEmpty {
                         continuation.resume(throwing: RecognizerError.noResult)
                     } else {
-                        continuation.resume(returning: text)
+                        continuation.resume(returning: best)
                     }
                 }
             }
         }
+
+        return AudioRecognition(
+            candidates: [SpeechCandidate(text: text, confidence: 0.3)],
+            embedding: nil
+        )
     }
 }

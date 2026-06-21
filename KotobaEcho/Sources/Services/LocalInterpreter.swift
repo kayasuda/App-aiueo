@@ -1,76 +1,44 @@
 import Foundation
 
-/// クラウド未使用時のオフライン推定。登録フレーズの「聞こえ方」と
-/// 今回のラフな読みを文字列の近さ（編集距離）で照合する単純版。
-///
-/// 文脈は使えないため精度は限定的だが、同意前でも最低限動く。
+/// クラウド未使用時のオフライン推定。
+/// 音響照合の結果があればそれを最優先し、なければ音声候補のテキストをそのまま採用する。
 struct LocalInterpreter: ClaudeInterpreting {
 
-    func interpret(roughTranscript: String,
+    func interpret(transcriptCandidates: [SpeechCandidate],
+                   acousticMatches: [AcousticMatch],
                    knownPhrases: [Phrase],
                    recentTurns: [ConversationTurn],
                    childName: String) async throws -> MatchCandidate {
 
-        let query = roughTranscript
-
-        var best: (phrase: Phrase, score: Double)?
-        for phrase in knownPhrases {
-            for recording in phrase.recordings {
-                let score = similarity(query, recording.roughTranscript)
-                if best == nil || score > best!.score {
-                    best = (phrase, score)
-                }
-            }
-        }
-
-        if let best, best.score >= 0.5 {
+        // 1. 音響照合（波形の近さ）が十分高ければ採用
+        if let top = acousticMatches.first, top.score >= 0.7 {
             return MatchCandidate(
-                intendedText: best.phrase.meaning,
-                matchedPhraseId: best.phrase.id,
-                confidence: best.score,
+                intendedText: top.meaning,
+                matchedPhraseId: top.phraseId,
+                confidence: top.score,
                 isKnown: true,
-                note: "オフライン照合"
+                note: "オフライン音響照合"
             )
         }
 
-        // 一致なし: 聞こえた音をそのまま、低確信度で返す
-        return MatchCandidate(
-            intendedText: query,
-            matchedPhraseId: nil,
-            confidence: 0.1,
-            isKnown: false,
-            note: "オフラインでは一致するフレーズが見つかりませんでした"
-        )
-    }
-
-    /// 0.0〜1.0 の類似度（1 - 正規化編集距離）。
-    private func similarity(_ a: String, _ b: String) -> Double {
-        if a.isEmpty && b.isEmpty { return 1 }
-        let distance = levenshtein(Array(a), Array(b))
-        let maxLen = max(a.count, b.count)
-        guard maxLen > 0 else { return 0 }
-        return 1.0 - Double(distance) / Double(maxLen)
-    }
-
-    private func levenshtein(_ a: [Character], _ b: [Character]) -> Int {
-        if a.isEmpty { return b.count }
-        if b.isEmpty { return a.count }
-
-        var previous = Array(0...b.count)
-        var current = [Int](repeating: 0, count: b.count + 1)
-
-        for i in 1...a.count {
-            current[0] = i
-            for j in 1...b.count {
-                let cost = a[i - 1] == b[j - 1] ? 0 : 1
-                current[j] = min(
-                    previous[j] + 1,        // 削除
-                    current[j - 1] + 1,     // 挿入
-                    previous[j - 1] + cost  // 置換
-                )
-            }
-            swap(&previous, &current)
+        // 2. 音声候補の最良テキストを低確信度で返す
+        if let best = transcriptCandidates.first, !best.text.isEmpty {
+            return MatchCandidate(
+                intendedText: best.text,
+                matchedPhraseId: nil,
+                confidence: min(best.confidence, 0.4),
+                isKnown: false,
+                note: "オフライン: 音声候補をそのまま採用"
+            )
         }
-        return previous[b.count]
+
+        // 3. 何もなければ空
+        return MatchCandidate(
+            intendedText: "",
+            matchedPhraseId: nil,
+            confidence: 0,
+            isKnown: false,
+            note: "オフラインでは推定できませんでした"
+        )
     }
 }
